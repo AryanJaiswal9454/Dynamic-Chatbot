@@ -1,7 +1,10 @@
 import re
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core import mail
+from django.core.mail import send_mail
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from .models import PendingSignup
@@ -80,3 +83,16 @@ class AdminUserTests(APITestCase):
         self.assertEqual(res.data["settings"]["bot_name"], "Mitra")
         bad = self.client.patch("/api/admin/bot-settings/", {"brand_color": "blue"}, format="json")
         self.assertEqual(bad.status_code, 400)
+
+
+@override_settings(EMAIL_BACKEND="accounts.email_backends.BrevoEmailBackend", DEFAULT_FROM_EMAIL="me@example.com")
+class BrevoBackendTests(APITestCase):
+    @patch("accounts.email_backends.requests.post")
+    def test_posts_to_brevo(self, post):
+        with patch.dict("os.environ", {"BREVO_API_KEY": "secret-key"}):
+            sent = send_mail("Hello", "Body text", "Aria <me@example.com>", ["user@example.com"])
+        self.assertEqual(sent, 1)
+        self.assertEqual(post.call_args.kwargs["headers"]["api-key"], "secret-key")
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["to"][0]["email"], "user@example.com")
+        self.assertEqual(payload["sender"]["name"], "Aria")
